@@ -16,7 +16,7 @@ if uploaded_file:
     # 讀取數據
     df = pd.read_excel(uploaded_file)
     st.subheader("數據預覽")
-    st.dataframe(df.head(10))
+    st.dataframe(df)
 
     # 2. 側邊欄設定
     st.sidebar.header("參數設定")
@@ -91,6 +91,5 @@ if uploaded_file:
             fig.update_layout(yaxis_range=[0, 5.5], xaxis_tickangle=-45)
             
             st.plotly_chart(fig, use_container_width=True)
-            st.balloons() # 分析成功小特效
 else:
     st.info("請從左側上傳Excel檔案以開始數據分析。")
