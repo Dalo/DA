@@ -1,91 +1,96 @@
 import streamlit as st
 import pandas as pd
 from scipy import stats
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
 
-# 設定網頁標題
-st.set_page_config(page_title="前後測數據分析系統", layout="wide")
+# 設定網頁標題與排版
+st.set_page_config(page_title="教育數據分析系統", layout="wide")
 
-st.title("📊 教育數據自動化分析系統")
-st.write("請上傳 Excel 檔案，系統將自動計算 T 檢定與滿意度圖表。")
+st.title("教育數據T檢定與滿意度分析系統")
+st.info("上傳Excel後，系統將自動處理資料轉型並產生統計圖表。")
 
 # 1. 檔案上傳
-uploaded_file = st.file_uploader("選擇 Excel 檔案", type=["xlsx", "xls"])
+uploaded_file = st.file_uploader("請上傳Excel檔案", type=["xlsx", "xls"])
 
 if uploaded_file:
     # 讀取數據
     df = pd.read_excel(uploaded_file)
     st.subheader("數據預覽")
-    st.dataframe(df.head(10)) # 顯示前10筆
+    st.dataframe(df.head(10))
 
     # 2. 側邊欄設定
-    st.sidebar.header("分析設定")
-    cols = df.columns.tolist()
-    pre_col = st.sidebar.selectbox("請選擇【前測】欄位", cols)
-    post_col = st.sidebar.selectbox("請選擇【後測】欄位", cols)
-    sat_cols = st.sidebar.multiselect("請選擇【滿意度】欄位 (可多選)", cols)
+    st.sidebar.header("參數設定")
+    all_cols = df.columns.tolist()
+    
+    pre_col = st.sidebar.selectbox("選取【前測】欄位", all_cols)
+    post_col = st.sidebar.selectbox("選取【後測】欄位", all_cols)
+    sat_cols = st.sidebar.multiselect("選取【滿意度】相關欄位(選所有滿意度問題喔)", all_cols)
 
-    if st.sidebar.button("開始執行分析"):
+    if st.sidebar.button("開始分析"):
         st.divider()
         
-        # --- A. 資料清理與轉換 ---
-        # 強制轉為數字，解決之前提到的 Object 報錯問題
+        # --- A. 資料清理與轉換 (解決 Object 型態報錯) ---
         df[pre_col] = pd.to_numeric(df[pre_col], errors='coerce')
         df[post_col] = pd.to_numeric(df[post_col], errors='coerce')
         
-        # 剔除空值列
+        # 剔除空值
         df_clean = df.dropna(subset=[pre_col, post_col]).copy()
         
-        # --- B. T 檢定計算 ---
-        st.subheader("📌 前後測 T 檢定結果")
+        # --- B. T 檢定分析 ---
+        st.subheader("學習成效T檢定 (Paired T-Test)")
         
         diff = df_clean[post_col] - df_clean[pre_col]
         
-        if diff.std() == 0:
-            st.error("無法計算 T 檢定：所有學生的進步分數完全相同（變異量為 0）。")
+        if diff.std() == 0 or len(df_clean) < 2:
+            st.warning("數據樣本不足或缺乏變異量，無法計算T檢定。")
         else:
             t_stat, p_val = stats.ttest_rel(df_clean[post_col], df_clean[pre_col])
             mean_pre = df_clean[pre_col].mean()
             mean_post = df_clean[post_col].mean()
             
-            # 顯示指標
+            # 顯示主要數據卡片
             c1, c2, c3 = st.columns(3)
             c1.metric("前測平均", f"{mean_pre:.2f}")
             c2.metric("後測平均", f"{mean_post:.2f}", f"{mean_post-mean_pre:+.2f}")
             
-            sig_status = "✅ 效果顯著" if p_val < 0.05 else "❌ 效果不顯著"
-            c3.metric("P 值 (顯著性)", f"{p_val:.4f}", sig_status)
+            sig_text = "效果顯著" if p_val < 0.05 else "效果不顯著"
+            c3.metric("P 值 (顯著性)", f"{p_val:.4f}", sig_text)
 
-            # 統計描述
-            st.write(f"分析有效樣本數：{len(df_clean)}")
+            # 學術描述建議
+            st.write(f"有效樣本數：{len(df_clean)}")
             if p_val < 0.05:
-                st.success(f"結果顯示：後測成績與前測有顯著差異 (p < .05)。")
+                st.success(f"統計結果：P值小於0.05，代表教學活動對學員表現有顯著提升。")
             else:
-                st.info(f"結果顯示：未達顯著差異水準 (p > .05)。")
+                st.info(f"統計結果：P值大於0.05，尚未達到統計學上的顯著差異。")
 
-        # --- C. 滿意度圖表 ---
+        # --- C. 滿意度圖表 (Plotly 方案：解決中文亂碼) ---
         if sat_cols:
             st.divider()
-            st.subheader("🌟 滿意度平均分數")
+            st.subheader("滿意度平均分數統計")
             
-            # 轉換滿意度欄位為數字並計算平均
+            # 強制將滿意度轉為數字
             for col in sat_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            sat_means = df[sat_cols].mean()
+            # 計算平均
+            sat_means = df[sat_cols].mean().reset_index()
+            sat_means.columns = ['評價題目', '平均分數']
             
-            # 繪圖
-            fig, ax = plt.subplots(figsize=(10, 5))
-            sns.barplot(x=sat_means.index, y=sat_means.values, ax=ax, palette="Blues_d")
-            ax.set_ylim(0, 5.5) # 假設滿分5分
-            ax.set_ylabel("平均分數")
+            # 繪製 Plotly 圖表
+            fig = px.bar(
+                sat_means, 
+                x='評價題目', 
+                y='平均分數', 
+                text='平均分數', 
+                color='平均分數',
+                color_continuous_scale='Blues',
+                title="滿意度各題項平均值"
+            )
             
-            # 在柱狀圖上方顯示數值
-            for i, v in enumerate(sat_means.values):
-                ax.text(i, v + 0.1, f"{v:.2f}", ha='center')
-                
-            st.pyplot(fig)
+            fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+            fig.update_layout(yaxis_range=[0, 5.5], xaxis_tickangle=-45)
             
+            st.plotly_chart(fig, use_container_width=True)
+            st.balloons() # 分析成功小特效
 else:
-    st.info("請從左側上傳 Excel 檔案以開始分析。")
+    st.info("請從左側上傳Excel檔案以開始數據分析。")
